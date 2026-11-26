@@ -34,7 +34,7 @@ def logo():
     w, h = word.size
     px = word.load()
     dirs = ((-1, 0), (1, 0), (0, -1), (0, 1))
-    is_bg = lambda rgb: rgb[1] > 170 and rgb[2] > 170
+    is_bg = lambda rgb: rgb[1] > 195 and rgb[2] > 195
 
     # flood-fill exterior and P/o holes (leaving small interior highlights alone);
     # repaint bg dark maroon so downscaling blends edges to dark red, not white
@@ -68,7 +68,7 @@ def logo():
     img = [[0] * 96 for _ in range(64)]
     for y in range(53):
         for x in range(94):
-            if alp_s.getpixel((x, y)) < 128:
+            if alp_s.getpixel((x, y)) < 140:
                 continue
             r, g, b = rgb_s.getpixel((x, y))
             img[8 + y][x] = min(LOGO_PALETTE, key=lambda k: sum((a - c) ** 2 for a, c in zip(LOGO_PALETTE[k], (r, g, b))))

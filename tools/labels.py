@@ -138,7 +138,7 @@ def apply_gameover(streams):
     blit_map(streams, 0xcca17, 0x100, range(0x25f, 0x28c), 0xcc655, [(0x3fc, 24), (0x42c, 24)], img)
 
 
-TINY = {        # 3x5 capitals for the tower's tiny "you are here" icon
+TINY = {        # 3x5 capitals for Nomi's tiny "I'm here" icon and CHAIN
     'Y': ["#.#", "#.#", ".#.", ".#.", ".#."],
     'O': ["###", "#.#", "#.#", "#.#", "###"],
     'U': ["#.#", "#.#", "#.#", "#.#", "###"],
@@ -149,6 +149,8 @@ TINY = {        # 3x5 capitals for the tower's tiny "you are here" icon
     'C': ["###", "#..", "#..", "#..", "###"],
     'I': ["###", ".#.", ".#.", ".#.", "###"],
     'N': ["##.", "#.#", "#.#", "#.#", "#.#"],
+    'M': ["#.#", "###", "###", "#.#", "#.#"],
+    "'": [".#.", ".#.", "...", "...", "..."],
 }
 
 
@@ -203,22 +205,141 @@ def apply_offset(streams):
     put_tiles(tiles, img, order)
 
 
+def _draw_tiny(img, text, y0, colour, outline=None):
+    """Draw compact 3x5 text centred horizontally on img at y0."""
+    h, w = len(img), len(img[0])
+    glyphs = []
+    for ch in text:
+        if ch == ' ':
+            glyphs.append(None)
+        elif ch == "'":
+            glyphs.append([[1 if r[1] == '#' else 0] for r in TINY[ch]])
+        else:
+            glyphs.append([[1 if c == '#' else 0 for c in r] for r in TINY[ch]])
+    tw = sum(2 if g is None else len(g[0]) for g in glyphs) + max(0, len(glyphs) - 1)
+    x = (w - tw) // 2
+    mask = [[0] * w for _ in range(h)]
+    for g in glyphs:
+        if g is None:
+            x += 3
+            continue
+        for dy, row in enumerate(g):
+            for dx, v in enumerate(row):
+                if v and 0 <= y0 + dy < h and 0 <= x + dx < w:
+                    mask[y0 + dy][x + dx] = 1
+        x += len(g[0]) + 1
+    if outline is not None:
+        for y in range(h):
+            for xx in range(w):
+                if not mask[y][xx] and any(
+                    0 <= y + dy < h and 0 <= xx + dx < w and mask[y + dy][xx + dx]
+                    for dy in (-1, 0, 1) for dx in (-1, 0, 1)
+                ):
+                    img[y][xx] = outline
+    for y in range(h):
+        for xx in range(w):
+            if mask[y][xx]:
+                img[y][xx] = colour
+
+
+def _render_with_apos(text, width, height, fill, outline, shine=None):
+    """Like render(), adding a 2x4 apostrophe matching title_font's 13px height."""
+    apos = [[1, 1], [1, 1], [1, 0], [1, 0]] + [[0, 0]] * 9
+    masks = [apos if ch == "'" else letter_mask(ch) for ch in text]
+    w = sum(len(m[0]) for m in masks) + len(masks) - 1
+    img = [[0] * width for _ in range(height)]
+    x, y0 = (width - w) // 2, (height - 13) // 2
+    for m in masks:
+        for y, row in enumerate(m):
+            for dx, v in enumerate(row):
+                if v:
+                    img[y0 + y][x + dx] = fill
+        x += len(m[0]) + 1
+    out = [r[:] for r in img]
+    for y in range(height):
+        for xx in range(width):
+            if img[y][xx] == fill:
+                for dy in (-1, 0, 1):
+                    for dx in (-1, 0, 1):
+                        yy, nx = y + dy, xx + dx
+                        if 0 <= yy < height and 0 <= nx < width and img[yy][nx] != fill:
+                            out[yy][nx] = outline
+    if shine is not None:
+        for xx in range(width):
+            for y in range(height):
+                if img[y][xx] == fill:
+                    out[y][xx] = shine
+                    break
+    return out
+
+
 def apply_here(streams):
-    # ここにいる (the tower strip's marker of where Arle is): a 24x24 icon, 3x3 tiles from
-    # 0x1b of stream 0xc8503, column by column; white frame (f), dark inside (1)
-    img = [[0xf] * 24 for _ in range(24)]
-    for y in range(1, 23):
-        for x in range(1, 23):
-            img[y][x] = 1
-    for line, word in enumerate(("YOU", "ARE", "HERE")):
-        w = 4 * len(word) - 1
-        x0, y0 = (24 - w) // 2, 3 + 6 * line
-        for k, ch in enumerate(word):
-            for y, row in enumerate(TINY[ch]):
-                for x, c in enumerate(row):
-                    if c == '#':
-                        img[y0 + y][x0 + 4 * k + x] = 0xa
-    put_tiles(streams.get(0xc8503), img, sprite_order(0x1b, 3, 3, 1))
+    # Nomi the Flea ("ここにいる" = "I'M HERE" pointing at the 1px white flea dot):
+    # 1. Tower 24x24 portrait (0x0c8503 tiles 0x1b..0x23): preserve frame (f), border (1),
+    #    red arrow (8, top cap at y=17 x=11..12, shaft at y=18 x=10..12), and flea dot (f).
+    htiles = streams.get(0xc8503)
+    horder = sprite_order(0x1b, 3, 3, 1)
+    himg = [[0] * 24 for _ in range(24)]
+    for ty, row in enumerate(horder):
+        for tx, t in enumerate(row):
+            cell = gfx.tile_get(htiles, t)
+            for y in range(8):
+                himg[ty * 8 + y][tx * 8:tx * 8 + 8] = cell[y]
+    for y in range(2, 19):
+        for x in range(2, 22):
+            if (y == 17 and x in (11, 12)) or (y == 18 and x in (10, 11, 12)):
+                continue
+            himg[y][x] = 3
+    _draw_tiny(himg, "I'M", 3, 0xa, outline=1)
+    _draw_tiny(himg, "HERE", 10, 0xa, outline=1)
+    put_tiles(htiles, himg, horder)
+
+    # 2. Blown-up profile/battle sprites (0x0ebd39): s06 "I'M / HERE!", s07 "YAY!", s08 "K.O."
+    btiles = streams.get(0xebd39)
+    def put_pair(img, t_left, t_right, rows):
+        put_tiles(btiles, [r[:32] for r in img], sprite_order(t_left, 4, rows, 1))
+        put_tiles(btiles, [r[32:48] for r in img], sprite_order(t_right, 2, rows, 1))
+
+    im6 = _render_with_apos("I'M", 48, 16, 0xa, 1, shine=0xf) + render("HERE!", 48, 16, 0xa, 1, shine=0xf)
+    for x in range(48):
+        for y in (15, 31):
+            for yy in range(y, y - 16, -1):
+                if im6[yy][x] == 0xa:
+                    im6[yy][x] = 8
+                    break
+    put_pair(im6, 0x04, 0x14, 4)
+    put_pair(render("YAY!", 48, 24, 8, 1, shine=0xd), 0x1c, 0x28, 3)
+
+    m8 = scaled_mask("K.O.", 10, 22, 2)
+    im8 = [[0] * 48 for _ in range(32)]
+    x0, y0 = (48 - len(m8[0])) // 2, (32 - len(m8)) // 2
+    for y, row in enumerate(m8):
+        for x, v in enumerate(row):
+            if v:
+                im8[y0 + y][x0 + x] = 6 if y < 14 else 5
+    put_pair(ring(im8, 1, {5, 6}), 0x2e, 0x3e, 4)
+
+    # 3. Center-panel Nomi animations & Tower box (0x0a5a1e, 0x0a5ce6, 0x0a602d)
+    t_idle, t_win, m_box = streams.get(0xa5a1e), streams.get(0xa5ce6), streams.get(0xa602d)
+    strip40 = [[0] * 40 for _ in range(8)]
+    _draw_tiny(strip40, "I'M HERE", 2, 0xa)
+    for ts in (t_idle, t_win):
+        put_tiles(ts, strip40, [[0, 1, 2, 3, 4]])
+    strip32 = [[0] * 32 for _ in range(8)]
+    _draw_tiny(strip32, "I'M HERE", 2, 0xa)
+    put_tiles(t_idle, strip32, [[0x22, 0x23, 0x24, 0x25]])
+    r3 = 3 * 32 + 13
+    assert m_box[r3:r3 + 5] == bytearray([0x22, 0x22, 0x23, 0x24, 0x25])
+    m_box[r3:r3 + 5] = bytes([0x1f, 0x22, 0x23, 0x24, 0x25])
+    # Bottom half of m_box (rows 8..15) reuses tile 0x0e (blank in JP "やったー!") as transparent
+    # background fill; append a dedicated blank tile so "YAY!" does not fill Nomi's defeat panel.
+    blank = len(t_win) // gfx.TILE
+    t_win.extend(bytes(gfx.TILE))
+    for i in range(256, len(m_box)):
+        if m_box[i] == 0x0e:
+            m_box[i] = blank
+    put_tiles(t_win, render("YAY!", 48, 16, 8, 7), sprite_order(10, 6, 2, 1))
+    put_tiles(t_win, render("YAY!", 48, 16, 6, 5), sprite_order(22, 6, 2, 1))
 
 
 ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', 'gfx')

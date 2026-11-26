@@ -46,6 +46,8 @@ def build(prog, logo_mode=logo.DEFAULT_MODE):
     titles.apply(streams)
     labels.apply(streams)
     logo.apply(prog, streams, logo_mode)
+    if logo_mode != 'original':
+        logo.apply_wallpaper(streams.get(logo.WALLPAPER_TILES), 258, logo_mode)
     labels.apply_service(prog)
     labels.apply_yay(prog, streams)
     labels.apply_sign(prog, streams)

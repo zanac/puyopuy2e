@@ -13,9 +13,9 @@ import romset, build, logo
 OUT_NAMES = ('pp2e-17241.ic32', 'pp2e-17240.ic31')
 # expected (even, odd) program CRCs for each --logo mode
 EXPECTED = {
-    'no-red-puyos':   (0x30aa4d00, 0x9df07ff6),
-    'with-red-puyos': (0xfd4fbd02, 0x9931ce5b),
-    'original':       (0x3a6607d1, 0xc375d2c5),
+    'no-red-puyos':   (0x22cbbe78, 0xdade073a),
+    'with-red-puyos': (0x92a1fcd8, 0x5c2b808d),
+    'original':       (0x23306e66, 0xf6674634),
 }
 
 
